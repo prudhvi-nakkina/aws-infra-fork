@@ -76,6 +76,107 @@ variable "sub_postfix" {
     default = ".0/24"
 }
 
+variable "security_group_name" {
+    type = string
+    description = "security group name"
+    default = "applicatiom"
+}
+
+variable "ports" {
+    type = list(number)
+    description = "list of parts"
+    default = [22, 80, 443, 5000, 0]
+}
+
+variable "protocol" {
+    type = string
+    description = "protocol name"
+    default = "tcp"
+}
+
+variable "eprotocol" {
+    type = string
+    description = "egress protocol name"
+    default = "-1"
+}
+
+variable "keypair_name" {
+    type = string
+    description = "key-pair name"
+    default = "app_keypair"
+}
+
+variable "keypair_path" {
+    type = string
+    description = "key-pair path"
+    default = "~/.ssh/id_rsa.pub"
+}
+
+variable "ebs_volume_size" {
+    type = number
+    description = "ebs volume size"
+    default = 50
+}
+
+variable "ebs_volume_type" {
+    type = string
+    description = "ebs volume type"
+    default = "gp2"
+}
+
+variable "instance_type" {
+    type = string
+    description = "ebs instance type"
+    default = "t2.micro"
+}
+
+variable "connection_type" {
+    type = string
+    description = "connection type"
+    default = "ssh"
+}
+
+variable "user" {
+    type = string
+    description = "user"
+    default = "ec2-user"
+}
+
+variable "privatekey_path" {
+    type = string
+    description = "path for private key"
+    default = "~/.ssh/id_rsa"
+}
+
+variable "ssh_timeout" {
+    type = string
+    description = "timeout for ssh"
+    default = "2h"
+}
+
+variable "device_name" {
+    type = string
+    description = "name of device"
+    default = "/dev/sdh"
+}
+
+variable "ebs_volume_name" {
+    type = string
+    description = "ebs volume name"
+    default = "ebs_volume"
+}
+
+variable "ec2_name" {
+    type = string
+    description = "name of ec2 instance"
+    default = "csye_ec2"
+}
+
+variable "ami_id" {
+    type = string
+    description = "ami id for ec2 instance"
+}
+
 # variable "aws_region" {
 #     type = string
 #     description = "Closest AWS Region"
