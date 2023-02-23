@@ -1,5 +1,5 @@
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
   profile = var.aws_profile
 }
 
@@ -12,24 +12,24 @@ resource "aws_vpc" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count = 3
-  cidr_block = "${var.sub_prefix}${count.index+1}${var.sub_postfix}"
-  vpc_id = aws_vpc.main.id
+  count             = 3
+  cidr_block        = "${var.sub_prefix}${count.index + 1}${var.sub_postfix}"
+  vpc_id            = aws_vpc.main.id
   availability_zone = "${var.aws_region}${var.availability_zones[count.index]}"
 
   tags = {
-    Name = "${var.public_subnet_name}-${count.index+1}"
+    Name = "${var.public_subnet_name}-${count.index + 1}"
   }
 }
 
 resource "aws_subnet" "private" {
-  count = 3
-  cidr_block = "${var.sub_prefix}${count.index+4}${var.sub_postfix}"
-  vpc_id = aws_vpc.main.id
+  count             = 3
+  cidr_block        = "${var.sub_prefix}${count.index + 4}${var.sub_postfix}"
+  vpc_id            = aws_vpc.main.id
   availability_zone = "${var.aws_region}${var.availability_zones[count.index]}"
 
   tags = {
-    Name = "${var.private_subnet_name}-${count.index+1}"
+    Name = "${var.private_subnet_name}-${count.index + 1}"
   }
 }
 
@@ -55,24 +55,24 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  count = 3
-  subnet_id = aws_subnet.public[count.index].id
+  count          = 3
+  subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
 resource "aws_route_table" "private" {
 
-    vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.main.id
 
-    tags = {
-        Name = "${var.private_table_name}-${var.cidr_block}"
-    }
-  
+  tags = {
+    Name = "${var.private_table_name}-${var.cidr_block}"
+  }
+
 }
 
 resource "aws_route_table_association" "private" {
-  count = 3
-  subnet_id = aws_subnet.private[count.index].id
+  count          = 3
+  subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
 }
 
@@ -133,17 +133,17 @@ resource "aws_ebs_volume" "ebs_volume" {
 
 # Launch EC2 instance
 resource "aws_instance" "csye_ec2" {
-  ami           = var.ami_id
-  instance_type = var.instance_type
-  subnet_id     = aws_subnet.public[0].id
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.application.id]
   tags = {
     Name = var.ec2_name
   }
-  key_name      = aws_key_pair.app_keypair.key_name
+  key_name = aws_key_pair.app_keypair.key_name
 
   associate_public_ip_address = true
-  disable_api_termination = false
+  disable_api_termination     = false
 
   root_block_device {
     delete_on_termination = true
@@ -161,9 +161,9 @@ resource "aws_instance" "csye_ec2" {
 
 resource "aws_volume_attachment" "ebsAttach" {
 
-    device_name = var.device_name
-    volume_id = aws_ebs_volume.ebs_volume.id
-    instance_id = aws_instance.csye_ec2.id
+  device_name = var.device_name
+  volume_id   = aws_ebs_volume.ebs_volume.id
+  instance_id = aws_instance.csye_ec2.id
 
 }
 
@@ -252,7 +252,7 @@ resource "aws_eip_association" "ec2_eip_assoc" {
 #     tags = {
 #         Name = "${var.private_table_name}-${count.index+1}"
 #     }
-  
+
 # }
 
 # resource "aws_route_table_association" "private" {
