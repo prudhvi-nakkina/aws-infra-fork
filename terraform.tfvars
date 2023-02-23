@@ -27,7 +27,7 @@ ssh_timeout = "2h"
 device_name = "/dev/sdh"
 ebs_volume_name = "ebs_volume"
 ec2_name = "csye_ec2"
-ami_id = "ami-0fb71110e82aad330"
+ami_id = "ami-063dd39e2b9a0d2d5"
 
 # aws_region = "us-east-1"
 # aws_profile = "dev"
