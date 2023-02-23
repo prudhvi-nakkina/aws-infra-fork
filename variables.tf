@@ -172,11 +172,11 @@ variable "ec2_name" {
   default     = "csye_ec2"
 }
 
-variable "ami_id" {
+variable "ami_name" {
   type        = string
-  description = "ami id for ec2 instance"
+  description = "ami name for ec2 instance"
+  default     = "amazon-linux-2-node-mysql-ami"
 }
-
 # variable "aws_region" {
 #     type = string
 #     description = "Closest AWS Region"

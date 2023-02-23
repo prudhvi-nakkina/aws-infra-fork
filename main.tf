@@ -131,9 +131,17 @@ resource "aws_ebs_volume" "ebs_volume" {
   }
 }
 
+data "aws_ami" "latest_ami" {
+  most_recent = true
+  filter {
+    name   = "name"
+    values = ["${var.ami_name}-*"]
+  }
+}
+
 # Launch EC2 instance
 resource "aws_instance" "csye_ec2" {
-  ami                    = var.ami_id
+  ami                    = data.aws_ami.latest_ami.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.application.id]
