@@ -145,6 +145,10 @@ resource "aws_instance" "csye_ec2" {
   associate_public_ip_address = true
   disable_api_termination = false
 
+  root_block_device {
+    delete_on_termination = true
+  }
+
   # Add SSH key to the instance
   connection {
     type        = var.connection_type
