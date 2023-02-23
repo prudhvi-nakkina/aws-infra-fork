@@ -13,6 +13,10 @@
 - As a developer, I can Create a private route table and Attach all private subnets created to the route table
 - As a developer, I can Create a public route in the public route table
 
+## Features - Assignment-4
+
+- As a developer, I can launch an EC2 instance by providing ami id
+
 ## Requirements
 
 - Terraform
