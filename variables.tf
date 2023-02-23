@@ -177,6 +177,7 @@ variable "ami_name" {
   description = "ami name for ec2 instance"
   default     = "amazon-linux-2-node-mysql-ami"
 }
+
 # variable "aws_region" {
 #     type = string
 #     description = "Closest AWS Region"
