@@ -35,3 +35,4 @@ DB_DIALECT          = "mysql"
 DB_PORT             = 3306
 NODE_ENV            = "dev"
 PORT                = 5000
+rds_instance        = "db.t3.micro"

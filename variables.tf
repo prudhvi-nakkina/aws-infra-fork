@@ -219,3 +219,9 @@ variable "NODE_ENV" {
   description = "env for node"
   default     = "dev"
 }
+
+variable "rds_instance" {
+  type        = string
+  description = "rds instance type"
+  default     = "db.t3.micro"
+}
