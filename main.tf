@@ -139,6 +139,12 @@ data "aws_ami" "latest_ami" {
   }
 }
 
+# create IAM instance profile
+resource "aws_iam_instance_profile" "profile" {
+  name = "ec2-profile"
+  role = aws_iam_role.EC2-CSYE6225.name
+}
+
 # Launch EC2 instance
 resource "aws_instance" "csye_ec2" {
   ami                    = data.aws_ami.latest_ami.id
@@ -157,6 +163,9 @@ resource "aws_instance" "csye_ec2" {
     delete_on_termination = true
   }
 
+  # Attach IAM role to instance
+  iam_instance_profile = aws_iam_instance_profile.profile.name
+
   # Add SSH key to the instance
   connection {
     type        = var.connection_type
@@ -165,6 +174,18 @@ resource "aws_instance" "csye_ec2" {
     timeout     = var.ssh_timeout
     host        = self.public_ip
   }
+
+  user_data = <<EOF
+              #!/bin/bash
+              echo 'export S3=${aws_s3_bucket.private_bucket.id}' >> ~/.bash_profile
+              echo 'export DB_USERNAME=${var.DB_USERNAME}' >> ~/.bash_profile
+              echo 'export DB_PASSWORD=${var.DB_PASSWORD}' >> ~/.bash_profile
+              echo 'export DB_DIALECT=${var.DB_DIALECT}' >> ~/.bash_profile
+              echo 'export DB=${var.DB_USERNAME}' >> ~/.bash_profile
+              echo 'export DB_HOST=${data.aws_db_instance.default.address}' >> ~/.bash_profile
+              echo 'export DB_PORT=${var.DB_PORT}' >> ~/.bash_profile
+              source ~/.bash_profile
+              EOF
 }
 
 resource "aws_volume_attachment" "ebsAttach" {
@@ -186,85 +207,178 @@ resource "aws_eip_association" "ec2_eip_assoc" {
   allocation_id = aws_eip.ec2_eip.id
 }
 
-# provider "aws" {
-#   region = var.aws_region
-#   profile = var.aws_profile
-# }
+resource "random_string" "random" {
+  length           = 8
+  special          = true
+  override_special = "/@£$"
+}
 
-# resource "aws_vpc" "main" {
-#   count = 3
-#   cidr_block = var.cidr_blocks[count.index]
+# Create S3 bucket with a random name
+resource "aws_s3_bucket" "private_bucket" {
+  bucket        = "${var.bucket_name}${random_string.random.result}${var.aws_profile}"
+  force_destroy = true
+}
 
-#   tags = {
-#     Name = "${var.vpc_name}-${count.index+1}"
-#   }
-# }
+resource "aws_s3_bucket_acl" "example_bucket_acl" {
+  bucket = aws_s3_bucket.private_bucket.id
+  acl    = "private"
+}
 
-# resource "aws_subnet" "public" {
-#   count = 9
-#   cidr_block = var.public_blocks[count.index]
-#   vpc_id = aws_vpc.main[floor(count.index / 3)].id
-#   availability_zone = var.availability_zones[(((count.index % 3) == 0) || count.index == 0)  ? 0 : (count.index % 2) == 0 ? 1 : 2]
+resource "aws_s3_bucket_server_side_encryption_configuration" "example" {
+  bucket = aws_s3_bucket.private_bucket.id
 
-#   tags = {
-#     Name = "${var.public_subnet_name}-${count.index+1}"
-#   }
-# }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
 
-# resource "aws_subnet" "private" {
-#   count = 9
-#   cidr_block = var.private_blocks[count.index]
-#   vpc_id = aws_vpc.main[floor(count.index / 3)].id
-#   availability_zone = var.availability_zones[(((count.index % 3) == 0) || count.index == 0)  ? 0 : (count.index % 2) == 0 ? 1 : 2]
+# Configure S3 bucket lifecycle policy to delete objects
+resource "aws_s3_bucket_lifecycle_configuration" "private_bucket_lifecycle" {
+  bucket = aws_s3_bucket.private_bucket.id
+  rule {
+    id     = "delete-objects"
+    status = "Enabled"
+    prefix = ""
+    expiration {
+      days = 30
+    }
+  }
 
-#   tags = {
-#     Name = "${var.private_subnet_name}-${count.index+1}"
-#   }
-# }
+  rule {
+    id     = "transition-to-standard-ia"
+    status = "Enabled"
+    prefix = ""
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+  }
+}
 
-# resource "aws_internet_gateway" "gw" {
-#   count = 3
-#   vpc_id = aws_vpc.main[count.index].id
+# Configure S3 bucket versioning
+resource "aws_s3_bucket_versioning" "private_bucket_versioning" {
+  bucket = aws_s3_bucket.private_bucket.id
 
-#   tags = {
-#     Name = "${var.gateway_name}-${count.index+1}"
-#   }
-# }
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
 
-# resource "aws_route_table" "public" {
-#   count = 3
-#   vpc_id = aws_vpc.main[count.index].id
+# Create IAM policy for S3 access
+resource "aws_iam_policy" "WebAppS3" {
+  name        = "WebAppS3"
+  description = "Allows EC2 instances to access S3 buckets"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectAcl",
+          "s3:PutObject",
+          "s3:PutObjectAcl",
+          "s3:DeleteObject",
+          "s3:ListBucket"
 
-#   route {
-#     cidr_block = var.cidr_gateway
-#     gateway_id = aws_internet_gateway.gw[count.index].id
-#   }
+        ]
+        Resource = [
+          "arn:aws:s3:::${aws_s3_bucket.private_bucket.bucket}/*",
+          "arn:aws:s3:::${aws_s3_bucket.private_bucket.bucket}"
+        ]
+      }
+    ]
+  })
+}
 
-#   tags = {
-#     Name = "${var.public_table_name}-${count.index+1}"
-#   }
-# }
+# Create IAM role for EC2 instance
+resource "aws_iam_role" "EC2-CSYE6225" {
+  name = "EC2-CSYE6225"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
 
-# resource "aws_route_table_association" "public" {
-#   count = 9
-#   subnet_id = aws_subnet.public[count.index].id
-#   route_table_id = aws_route_table.public[floor(count.index / 3)].id
-# }
+# Attach S3 access policy to IAM role
+resource "aws_iam_role_policy_attachment" "s3_access_policy_attachment" {
+  policy_arn = aws_iam_policy.WebAppS3.arn
+  role       = aws_iam_role.EC2-CSYE6225.name
+}
 
-# resource "aws_route_table" "private" {
+resource "aws_db_instance" "default" {
+  allocated_storage    = 10
+  db_name              = var.DB_USERNAME
+  engine               = "mysql"
+  instance_class       = "db.t3.micro"
+  identifier           = var.DB_USERNAME
+  username             = var.DB_USERNAME
+  password             = var.DB_PASSWORD
+  multi_az             = false
+  publicly_accessible  = false
+  parameter_group_name = aws_db_parameter_group.my_parameter_group.id
+  vpc_security_group_ids = [
+    aws_security_group.database_security_group.id
+  ]
 
-#     count = 3
+  db_subnet_group_name = aws_db_subnet_group.my_subnet_group.name
 
-#     vpc_id = aws_vpc.main[count.index].id
+  tags = {
+    Name = var.DB_USERNAME
+  }
+}
 
-#     tags = {
-#         Name = "${var.private_table_name}-${count.index+1}"
-#     }
+data "aws_db_instance" "default" {
+  db_instance_identifier = aws_db_instance.default.id
+}
 
-# }
+resource "aws_db_parameter_group" "my_parameter_group" {
+  name   = "my-parameter-group"
+  family = "mysql8.0"
 
-# resource "aws_route_table_association" "private" {
-#   count = 9
-#   subnet_id = aws_subnet.private[count.index].id
-#   route_table_id = aws_route_table.private[floor(count.index / 3)].id
-# }
+  parameter {
+    name  = "max_allowed_packet"
+    value = "67108864"
+  }
+}
+
+resource "aws_db_subnet_group" "my_subnet_group" {
+  name        = "my-subnet-group"
+  description = "My subnet group for RDS instance"
+
+  subnet_ids = [aws_subnet.private[0].id, aws_subnet.private[1].id, aws_subnet.private[2].id]
+}
+
+resource "aws_security_group" "database_security_group" {
+  description = "Security group for RDS instances"
+  name        = "database"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port = 3306
+    to_port   = 3306
+    protocol  = "tcp"
+    security_groups = [
+      aws_security_group.application.id
+    ]
+  }
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = [
+      "0.0.0.0/0"
+    ]
+  }
+}
