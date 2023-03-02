@@ -186,6 +186,8 @@ After=network.target
 Environment="DB_HOST=${aws_db_instance.default.address}"
 Environment="DB_PORT=${var.DB_PORT}"
 Environment="DB_DIALECT=${var.DB_DIALECT}"
+Environment="NODE_ENV=${var.NODE_ENV}"
+Environment="PORT=${var.PORT}"
 Environment="DB_USERNAME=${aws_db_instance.default.username}"
 Environment="DB_PASSWORD=${aws_db_instance.default.password}"
 Environment="DB=${aws_db_instance.default.db_name}"
