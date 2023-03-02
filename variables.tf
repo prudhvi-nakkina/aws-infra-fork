@@ -207,3 +207,15 @@ variable "bucket_name" {
   description = "name for s3 bucket"
   default     = "csye-bucket-"
 }
+
+variable "PORT" {
+  type        = number
+  description = "port for node"
+  default     = 5000
+}
+
+variable "NODE_ENV" {
+  type        = string
+  description = "env for node"
+  default     = "dev"
+}

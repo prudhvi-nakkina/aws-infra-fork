@@ -33,3 +33,5 @@ DB_USERNAME         = "csye6225"
 DB_PASSWORD         = "Leomessi1!"
 DB_DIALECT          = "mysql"
 DB_PORT             = 3306
+NODE_ENV            = "dev"
+PORT                = 5000
