@@ -160,6 +160,7 @@ resource "aws_instance" "csye_ec2" {
   disable_api_termination     = false
 
   root_block_device {
+    volume_size           = 50
     delete_on_termination = true
   }
 
@@ -176,16 +177,33 @@ resource "aws_instance" "csye_ec2" {
   }
 
   user_data = <<EOF
-              #!/bin/bash
-              echo 'export S3=${aws_s3_bucket.private_bucket.id}' >> ~/.bash_profile
-              echo 'export DB_USERNAME=${var.DB_USERNAME}' >> ~/.bash_profile
-              echo 'export DB_PASSWORD=${var.DB_PASSWORD}' >> ~/.bash_profile
-              echo 'export DB_DIALECT=${var.DB_DIALECT}' >> ~/.bash_profile
-              echo 'export DB=${var.DB_USERNAME}' >> ~/.bash_profile
-              echo 'export DB_HOST=${data.aws_db_instance.default.address}' >> ~/.bash_profile
-              echo 'export DB_PORT=${var.DB_PORT}' >> ~/.bash_profile
-              source ~/.bash_profile
-              EOF
+#!/bin/bash
+echo "[Unit]
+Description=Webapp Service
+After=network.target
+
+[Service]
+Environment="DB_HOST=${aws_db_instance.default.address}"
+Environment="DB_PORT=${var.DB_PORT}"
+Environment="DB_DIALECT=${var.DB_DIALECT}"
+Environment="DB_USERNAME=${aws_db_instance.default.username}"
+Environment="DB_PASSWORD=${aws_db_instance.default.password}"
+Environment="DB=${aws_db_instance.default.db_name}"
+Environment="S3=${aws_s3_bucket.private_bucket.bucket}"
+Environment="AWS_REGION=${var.aws_region}"
+
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/webapp
+ExecStart=/usr/bin/node listener.js
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
+sudo systemctl daemon-reload
+sudo systemctl start webapp.service
+sudo systemctl enable webapp.service
+EOF
 }
 
 resource "aws_volume_attachment" "ebsAttach" {
@@ -209,8 +227,8 @@ resource "aws_eip_association" "ec2_eip_assoc" {
 
 resource "random_string" "random" {
   length           = 8
-  special          = true
-  override_special = "/@£$"
+  special          = false
+  upper            = false
 }
 
 # Create S3 bucket with a random name
@@ -232,6 +250,15 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "example" {
       sse_algorithm = "AES256"
     }
   }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_bucket" {
+  bucket = aws_s3_bucket.private_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # Configure S3 bucket lifecycle policy to delete objects
@@ -327,6 +354,9 @@ resource "aws_db_instance" "default" {
   multi_az             = false
   publicly_accessible  = false
   parameter_group_name = aws_db_parameter_group.my_parameter_group.id
+  skip_final_snapshot  = true
+  apply_immediately    = true
+  backup_retention_period = 0
   vpc_security_group_ids = [
     aws_security_group.database_security_group.id
   ]
