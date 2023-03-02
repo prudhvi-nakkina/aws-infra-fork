@@ -78,7 +78,8 @@ resource "aws_route_table_association" "private" {
 
 # Create security group for EC2 instance
 resource "aws_security_group" "application" {
-  name_prefix = var.security_group_name
+  description = "My security group for EC2 instance"
+  name        = var.security_group_name
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -114,6 +115,10 @@ resource "aws_security_group" "application" {
     to_port     = var.ports[4]
     protocol    = var.eprotocol
     cidr_blocks = [var.cidr_gateway]
+  }
+
+  tags = {
+    Name = "application"
   }
 }
 
@@ -228,9 +233,9 @@ resource "aws_eip_association" "ec2_eip_assoc" {
 }
 
 resource "random_string" "random" {
-  length           = 8
-  special          = false
-  upper            = false
+  length  = 8
+  special = false
+  upper   = false
 }
 
 # Create S3 bucket with a random name
@@ -346,18 +351,18 @@ resource "aws_iam_role_policy_attachment" "s3_access_policy_attachment" {
 }
 
 resource "aws_db_instance" "default" {
-  allocated_storage    = 10
-  db_name              = var.DB_USERNAME
-  engine               = "mysql"
-  instance_class       = "db.t3.micro"
-  identifier           = var.DB_USERNAME
-  username             = var.DB_USERNAME
-  password             = var.DB_PASSWORD
-  multi_az             = false
-  publicly_accessible  = false
-  parameter_group_name = aws_db_parameter_group.my_parameter_group.id
-  skip_final_snapshot  = true
-  apply_immediately    = true
+  allocated_storage       = 10
+  db_name                 = var.DB_USERNAME
+  engine                  = var.DB_DIALECT
+  instance_class          = var.rds_instance
+  identifier              = var.DB_USERNAME
+  username                = var.DB_USERNAME
+  password                = var.DB_PASSWORD
+  multi_az                = false
+  publicly_accessible     = false
+  parameter_group_name    = aws_db_parameter_group.my_parameter_group.id
+  skip_final_snapshot     = true
+  apply_immediately       = true
   backup_retention_period = 0
   vpc_security_group_ids = [
     aws_security_group.database_security_group.id
@@ -412,5 +417,9 @@ resource "aws_security_group" "database_security_group" {
     cidr_blocks = [
       "0.0.0.0/0"
     ]
+  }
+
+  tags = {
+    Name = "database"
   }
 }
