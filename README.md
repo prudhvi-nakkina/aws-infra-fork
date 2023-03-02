@@ -1,4 +1,4 @@
-# Assignment - 3
+# Assignment - 5
 
 ## Goal
 
@@ -16,6 +16,13 @@
 ## Features - Assignment-4
 
 - As a developer, I can launch an EC2 instance by providing ami id
+
+## Features - Assignment-5
+
+- As a developer, I can launch an EC2 instance by providing user_data
+- As a developer, I can launch an RDS instance by providing security group and parameter group
+- As a developer, I can launch S3 instance
+- As a developer, I can create a new policy to allow ec2 instance communicate with S3
 
 ## Requirements
 
