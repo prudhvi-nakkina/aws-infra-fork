@@ -225,3 +225,15 @@ variable "rds_instance" {
   description = "rds instance type"
   default     = "db.t3.micro"
 }
+
+variable "dev_domain" {
+  type        = string
+  description = "dev domain name"
+  default     = "dev.prudhvinakkina.me"
+}
+
+variable "demo_domain" {
+  type        = string
+  description = "demo domain name"
+  default     = "prod.prudhvinakkina.me"
+}

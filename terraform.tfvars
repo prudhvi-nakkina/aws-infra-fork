@@ -36,3 +36,5 @@ DB_PORT             = 3306
 NODE_ENV            = "dev"
 PORT                = 5000
 rds_instance        = "db.t3.micro"
+dev_domain          = "dev.prudhvinakkina.me"
+demo_domain         = "prod.prudhvinakkina.me"
