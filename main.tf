@@ -181,8 +181,57 @@ resource "aws_instance" "csye_ec2" {
     host        = self.public_ip
   }
 
-  user_data = <<EOF
+  user_data = <<REALEND
 #!/bin/bash
+# Update package manager
+    sudo apt-get update
+
+    # Install nginx
+    sudo apt-get install nginx -y
+
+    # Start nginx
+    sudo systemctl start nginx
+
+    # Enable nginx to start on boot
+    sudo systemctl enable nginx
+
+    sudo mkdir /etc/nginx/sites-available
+    sudo mkdir /etc/nginx/sites-enabled
+
+    sed -i '32 i include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+
+    # Create a new Nginx server block for our Node.js app
+    sudo touch /etc/nginx/sites-available/my-app
+
+    # Open the file in a text editor
+    sudo nano /etc/nginx/sites-available/my-app
+
+    cat <<EOF | sudo tee /etc/nginx/sites-available/my-app
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name ${var.dev_domain} ${var.demo_domain};
+
+    location / {
+        proxy_pass http://${aws_eip.ec2_eip.public_ip}:5000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+    }
+}
+EOF
+
+    # Create a symbolic link to enable the new server block
+    sudo ln -s /etc/nginx/sites-available/my-app /etc/nginx/sites-enabled/
+
+    # Test Nginx configuration
+    sudo nginx -t
+
+    # Reload Nginx to apply the new configuration
+    sudo systemctl reload nginx
 echo "[Unit]
 Description=Webapp Service
 After=network.target
@@ -210,7 +259,8 @@ WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
 sudo systemctl daemon-reload
 sudo systemctl start webapp.service
 sudo systemctl enable webapp.service
-EOF
+
+REALEND
 }
 
 resource "aws_volume_attachment" "ebsAttach" {
@@ -422,4 +472,19 @@ resource "aws_security_group" "database_security_group" {
   tags = {
     Name = "database"
   }
+}
+
+data "aws_route53_zone" "example_zone" {
+  name = var.aws_profile == "dev" ? var.dev_domain : var.demo_domain
+}
+
+resource "aws_route53_record" "example_record" {
+  zone_id = data.aws_route53_zone.example_zone.id
+  name    = var.aws_profile == "dev" ? var.dev_domain : var.demo_domain
+  type    = "A"
+  ttl     = "300"
+
+  records = [
+    aws_eip.ec2_eip.public_ip
+  ]
 }
