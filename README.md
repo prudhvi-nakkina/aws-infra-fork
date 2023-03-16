@@ -1,4 +1,4 @@
-# Assignment - 5
+# Assignment - 6
 
 ## Goal
 
@@ -23,6 +23,11 @@
 - As a developer, I can launch an RDS instance by providing security group and parameter group
 - As a developer, I can launch S3 instance
 - As a developer, I can create a new policy to allow ec2 instance communicate with S3
+
+## Features - Assignment-6
+
+- As a developer, I can route the traffic to port 80 by using NGINX
+- As a developer, I can create an A record for the EC2 instance IP address and use domain name to access the server
 
 ## Requirements
 
