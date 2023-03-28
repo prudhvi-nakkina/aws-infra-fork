@@ -260,6 +260,8 @@ sudo systemctl daemon-reload
 sudo systemctl start webapp.service
 sudo systemctl enable webapp.service
 
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/tmp/config.json
+
 REALEND
 }
 
@@ -377,6 +379,40 @@ resource "aws_iam_policy" "WebAppS3" {
   })
 }
 
+# Create IAM policy for Cloudwatch
+resource "aws_iam_policy" "WebAppCloudWatch" {
+  name        = "WebAppCloudWatch"
+  description = "Allows EC2 instances to access CloudWatch"
+  policy = jsonencode(
+    {
+      "Version" : "2012-10-17",
+      "Statement" : [
+        {
+          "Effect" : "Allow",
+          "Action" : [
+            "cloudwatch:PutMetricData",
+            "ec2:DescribeTags",
+            "logs:PutLogEvents",
+            "logs:DescribeLogStreams",
+            "logs:DescribeLogGroups",
+            "logs:CreateLogStream",
+            "logs:CreateLogGroup"
+          ],
+          "Resource" : "*"
+        },
+        {
+          "Effect" : "Allow",
+          "Action" : [
+            "ssm:GetParameter",
+            "ssm:PutParameter"
+          ],
+          "Resource" : "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*"
+        }
+      ]
+    }
+  )
+}
+
 # Create IAM role for EC2 instance
 resource "aws_iam_role" "EC2-CSYE6225" {
   name = "EC2-CSYE6225"
@@ -397,6 +433,12 @@ resource "aws_iam_role" "EC2-CSYE6225" {
 # Attach S3 access policy to IAM role
 resource "aws_iam_role_policy_attachment" "s3_access_policy_attachment" {
   policy_arn = aws_iam_policy.WebAppS3.arn
+  role       = aws_iam_role.EC2-CSYE6225.name
+}
+
+# Attach CloudWatch access policy to IAM role
+resource "aws_iam_role_policy_attachment" "cw_access_policy_attachment" {
+  policy_arn = aws_iam_policy.WebAppCloudWatch.arn
   role       = aws_iam_role.EC2-CSYE6225.name
 }
 
