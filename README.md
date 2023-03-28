@@ -1,4 +1,4 @@
-# Assignment - 6
+# Assignment - 7
 
 ## Goal
 
@@ -28,6 +28,12 @@
 
 - As a developer, I can route the traffic to port 80 by using NGINX
 - As a developer, I can create an A record for the EC2 instance IP address and use domain name to access the server
+
+## Assignment-7 features
+
+- As a user, I want all application log data to be available in CloudWatch.
+- As a user, I want metrics on API usage available in CloudWatch.
+- As a developer, I can log metrics using statsd
 
 ## Requirements
 
