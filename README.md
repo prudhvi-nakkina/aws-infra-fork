@@ -1,4 +1,4 @@
-# Assignment - 7
+# Assignment - 8
 
 ## Goal
 
@@ -34,6 +34,11 @@
 - As a user, I want all application log data to be available in CloudWatch.
 - As a user, I want metrics on API usage available in CloudWatch.
 - As a developer, I can log metrics using statsd
+
+## Assignment-7 features
+
+- As a developer, I can implement auto scaling of ec2 instances based on CPU Utilization
+- As a developer, I can implement load balancing using application load balancer
 
 ## Requirements
 
