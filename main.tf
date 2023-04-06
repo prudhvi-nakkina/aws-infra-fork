@@ -83,31 +83,21 @@ resource "aws_security_group" "application" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port   = var.ports[0]
-    to_port     = var.ports[0]
-    protocol    = var.protocol
-    cidr_blocks = [var.cidr_gateway]
+    from_port = var.ports[0]
+    to_port   = var.ports[0]
+    protocol  = var.protocol
+    security_groups = [
+      aws_security_group.load_balancer_security_group.id
+    ]
   }
 
   ingress {
-    from_port   = var.ports[1]
-    to_port     = var.ports[1]
-    protocol    = var.protocol
-    cidr_blocks = [var.cidr_gateway]
-  }
-
-  ingress {
-    from_port   = var.ports[2]
-    to_port     = var.ports[2]
-    protocol    = var.protocol
-    cidr_blocks = [var.cidr_gateway]
-  }
-
-  ingress {
-    from_port   = var.ports[3]
-    to_port     = var.ports[3]
-    protocol    = var.protocol
-    cidr_blocks = [var.cidr_gateway]
+    from_port = var.ports[3]
+    to_port   = var.ports[3]
+    protocol  = var.protocol
+    security_groups = [
+      aws_security_group.load_balancer_security_group.id
+    ]
   }
 
   egress {
@@ -127,14 +117,14 @@ resource "aws_key_pair" "app_keypair" {
   public_key = file(var.keypair_path)
 }
 
-resource "aws_ebs_volume" "ebs_volume" {
-  availability_zone = "${var.aws_region}${var.availability_zones[0]}"
-  size              = var.ebs_volume_size
-  type              = var.ebs_volume_type
-  tags = {
-    Name = var.ebs_volume_name
-  }
-}
+# resource "aws_ebs_volume" "ebs_volume" {
+#   availability_zone = "${var.aws_region}${var.availability_zones[0]}"
+#   size              = var.ebs_volume_size
+#   type              = var.ebs_volume_type
+#   tags = {
+#     Name = var.ebs_volume_name
+#   }
+# }
 
 data "aws_ami" "latest_ami" {
   most_recent = true
@@ -150,27 +140,15 @@ resource "aws_iam_instance_profile" "profile" {
   role = aws_iam_role.EC2-CSYE6225.name
 }
 
-# Launch EC2 instance
-resource "aws_instance" "csye_ec2" {
-  ami                    = data.aws_ami.latest_ami.id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public[0].id
-  vpc_security_group_ids = [aws_security_group.application.id]
-  tags = {
-    Name = var.ec2_name
-  }
-  key_name = aws_key_pair.app_keypair.key_name
-
+# Define the launch configuration
+resource "aws_launch_configuration" "csye_ec2_config" {
+  image_id                    = data.aws_ami.latest_ami.id
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.app_keypair.key_name
+  security_groups             = [aws_security_group.application.id]
+  name_prefix                 = "aws_launch_config"
   associate_public_ip_address = true
-  disable_api_termination     = false
-
-  root_block_device {
-    volume_size           = 50
-    delete_on_termination = true
-  }
-
-  # Attach IAM role to instance
-  iam_instance_profile = aws_iam_instance_profile.profile.name
+  iam_instance_profile        = aws_iam_instance_profile.profile.name
 
   # Add SSH key to the instance
   connection {
@@ -181,57 +159,24 @@ resource "aws_instance" "csye_ec2" {
     host        = self.public_ip
   }
 
+  root_block_device {
+    volume_size           = 50
+    delete_on_termination = true
+  }
+
+  ebs_block_device {
+    device_name           = "/dev/sdf"
+    volume_size           = var.ebs_volume_size
+    volume_type           = var.ebs_volume_type
+    delete_on_termination = true
+
+  }
+
   user_data = <<REALEND
 #!/bin/bash
 # Update package manager
     sudo apt-get update
 
-    # Install nginx
-    sudo apt-get install nginx -y
-
-    # Start nginx
-    sudo systemctl start nginx
-
-    # Enable nginx to start on boot
-    sudo systemctl enable nginx
-
-    sudo mkdir /etc/nginx/sites-available
-    sudo mkdir /etc/nginx/sites-enabled
-
-    sed -i '32 i include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
-
-    # Create a new Nginx server block for our Node.js app
-    sudo touch /etc/nginx/sites-available/my-app
-
-    # Open the file in a text editor
-    sudo nano /etc/nginx/sites-available/my-app
-
-    cat <<EOF | sudo tee /etc/nginx/sites-available/my-app
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-
-    server_name ${var.dev_domain} ${var.demo_domain};
-
-    location / {
-        proxy_pass http://${aws_eip.ec2_eip.public_ip}:5000/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-EOF
-
-    # Create a symbolic link to enable the new server block
-    sudo ln -s /etc/nginx/sites-available/my-app /etc/nginx/sites-enabled/
-
-    # Test Nginx configuration
-    sudo nginx -t
-
-    # Reload Nginx to apply the new configuration
-    sudo systemctl reload nginx
 echo "[Unit]
 Description=Webapp Service
 After=network.target
@@ -265,24 +210,213 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-c
 REALEND
 }
 
-resource "aws_volume_attachment" "ebsAttach" {
-
-  device_name = var.device_name
-  volume_id   = aws_ebs_volume.ebs_volume.id
-  instance_id = aws_instance.csye_ec2.id
-
+# Define the auto scaling group
+resource "aws_autoscaling_group" "csye_ec2-asg" {
+  name                 = "csye_ec2-asg"
+  default_cooldown     = 60
+  desired_capacity     = 1
+  launch_configuration = aws_launch_configuration.csye_ec2_config.name
+  vpc_zone_identifier  = ["${aws_subnet.public[0].id}", "${aws_subnet.public[1].id}", "${aws_subnet.public[2].id}"]
+  max_size             = 3
+  min_size             = 1
+  health_check_type    = "EC2"
+  force_delete         = true
+  target_group_arns    = [aws_lb_target_group.web.arn]
+  tag {
+    key                 = "Name"
+    value               = "csye_ec2-asg"
+    propagate_at_launch = true
+  }
 }
 
-# Allocate Elastic IP
-resource "aws_eip" "ec2_eip" {
-  vpc = true
+resource "aws_autoscaling_policy" "scale_up_policy" {
+  name                   = "scale_up_policy"
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = aws_autoscaling_group.csye_ec2-asg.name
+
+  policy_type        = "SimpleScaling"
+  scaling_adjustment = 1
 }
 
-# Associate Elastic IP with EC2 instance
-resource "aws_eip_association" "ec2_eip_assoc" {
-  instance_id   = aws_instance.csye_ec2.id
-  allocation_id = aws_eip.ec2_eip.id
+resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
+  alarm_name          = "scale_up_alarm"
+  alarm_description   = "scale_up_alarm"
+  evaluation_periods  = "2"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "30"
+  statistic           = "Average"
+  threshold           = "5"
+  dimensions = {
+    "AutoScalingGroupName" = "${aws_autoscaling_group.csye_ec2-asg.name}"
+  }
+  actions_enabled = true
+  alarm_actions   = ["${aws_autoscaling_policy.scale_up_policy.arn}"]
 }
+
+
+resource "aws_autoscaling_policy" "scale_down_policy" {
+  name                   = "scale_down_policy"
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = aws_autoscaling_group.csye_ec2-asg.name
+
+  policy_type        = "SimpleScaling"
+  scaling_adjustment = -1
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
+  alarm_name          = "scale_down_alarm"
+  alarm_description   = "scale_down_alarm"
+  evaluation_periods  = "2"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "3"
+  dimensions = {
+    "AutoScalingGroupName" = "${aws_autoscaling_group.csye_ec2-asg.name}"
+  }
+  actions_enabled = true
+  alarm_actions   = ["${aws_autoscaling_policy.scale_down_policy.arn}"]
+}
+
+# Launch EC2 instance
+# resource "aws_instance" "csye_ec2" {
+#   ami                    = data.aws_ami.latest_ami.id
+#   instance_type          = var.instance_type
+#   subnet_id              = aws_subnet.public[0].id
+#   vpc_security_group_ids = [aws_security_group.application.id]
+#   tags = {
+#     Name = var.ec2_name
+#   }
+#   key_name = aws_key_pair.app_keypair.key_name
+
+#   associate_public_ip_address = true
+#   disable_api_termination     = false
+
+#   root_block_device {
+#     volume_size           = 50
+#     delete_on_termination = true
+#   }
+
+#   # Attach IAM role to instance
+#   iam_instance_profile = aws_iam_instance_profile.profile.name
+
+#   # Add SSH key to the instance
+#   connection {
+#     type        = var.connection_type
+#     user        = var.user
+#     private_key = file(var.privatekey_path)
+#     timeout     = var.ssh_timeout
+#     host        = self.public_ip
+#   }
+
+#   user_data = <<REALEND
+# #!/bin/bash
+# # Update package manager
+#     sudo apt-get update
+
+#     # Install nginx
+#     sudo apt-get install nginx -y
+
+#     # Start nginx
+#     sudo systemctl start nginx
+
+#     # Enable nginx to start on boot
+#     sudo systemctl enable nginx
+
+#     sudo mkdir /etc/nginx/sites-available
+#     sudo mkdir /etc/nginx/sites-enabled
+
+#     sed -i '32 i include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+
+#     # Create a new Nginx server block for our Node.js app
+#     sudo touch /etc/nginx/sites-available/my-app
+
+#     # Open the file in a text editor
+#     sudo nano /etc/nginx/sites-available/my-app
+
+#     cat <<EOF | sudo tee /etc/nginx/sites-available/my-app
+# server {
+#     listen 80 default_server;
+#     listen [::]:80 default_server;
+
+#     server_name ${var.dev_domain} ${var.demo_domain};
+
+#     location / {
+#         proxy_pass http://${aws_eip.ec2_eip.public_ip}:5000/;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade \$http_upgrade;
+#         proxy_set_header Connection 'upgrade';
+#         proxy_set_header Host \$host;
+#         proxy_cache_bypass \$http_upgrade;
+#     }
+# }
+# EOF
+
+#     # Create a symbolic link to enable the new server block
+#     sudo ln -s /etc/nginx/sites-available/my-app /etc/nginx/sites-enabled/
+
+#     # Test Nginx configuration
+#     sudo nginx -t
+
+#     # Reload Nginx to apply the new configuration
+#     sudo systemctl reload nginx
+# echo "[Unit]
+# Description=Webapp Service
+# After=network.target
+
+# [Service]
+# Environment="DB_HOST=${aws_db_instance.default.address}"
+# Environment="DB_PORT=${var.DB_PORT}"
+# Environment="DB_DIALECT=${var.DB_DIALECT}"
+# Environment="NODE_ENV=${var.NODE_ENV}"
+# Environment="PORT=${var.PORT}"
+# Environment="DB_USERNAME=${aws_db_instance.default.username}"
+# Environment="DB_PASSWORD=${aws_db_instance.default.password}"
+# Environment="DB=${aws_db_instance.default.db_name}"
+# Environment="S3=${aws_s3_bucket.private_bucket.bucket}"
+# Environment="AWS_REGION=${var.aws_region}"
+
+# Type=simple
+# User=ec2-user
+# WorkingDirectory=/home/ec2-user/webapp
+# ExecStart=/usr/bin/node listener.js
+# Restart=on-failure
+
+# [Install]
+# WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
+# sudo systemctl daemon-reload
+# sudo systemctl start webapp.service
+# sudo systemctl enable webapp.service
+
+# sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/tmp/config.json
+
+# REALEND
+# }
+
+# resource "aws_volume_attachment" "ebsAttach" {
+
+#   device_name = var.device_name
+#   volume_id   = aws_ebs_volume.ebs_volume.id
+#   instance_id = aws_instance.csye_ec2.id
+
+# }
+
+# # Allocate Elastic IP
+# resource "aws_eip" "ec2_eip" {
+#   vpc = true
+# }
+
+# # Associate Elastic IP with EC2 instance
+# resource "aws_eip_association" "ec2_eip_assoc" {
+#   instance_id   = aws_instance.csye_ec2.id
+#   allocation_id = aws_eip.ec2_eip.id
+# }
 
 resource "random_string" "random" {
   length  = 8
@@ -524,9 +658,81 @@ resource "aws_route53_record" "example_record" {
   zone_id = data.aws_route53_zone.example_zone.id
   name    = var.aws_profile == "dev" ? var.dev_domain : var.demo_domain
   type    = "A"
-  ttl     = "300"
 
-  records = [
-    aws_eip.ec2_eip.public_ip
-  ]
+  alias {
+    name                   = aws_lb.web.dns_name
+    zone_id                = aws_lb.web.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_security_group" "load_balancer_security_group" {
+
+  description = "Security group for load balancer"
+  name        = "load_balancer"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = var.ports[1]
+    to_port     = var.ports[1]
+    protocol    = var.protocol
+    cidr_blocks = [var.cidr_gateway]
+  }
+
+  ingress {
+    from_port   = var.ports[2]
+    to_port     = var.ports[2]
+    protocol    = var.protocol
+    cidr_blocks = [var.cidr_gateway]
+  }
+
+  egress {
+    from_port   = var.ports[4]
+    to_port     = var.ports[4]
+    protocol    = var.eprotocol
+    cidr_blocks = [var.cidr_gateway]
+  }
+
+  tags = {
+    Name = "load balancer"
+  }
+
+}
+
+resource "aws_lb" "web" {
+  name               = "my-web-app-lb"
+  internal           = false
+  load_balancer_type = "application"
+
+  subnets         = [aws_subnet.public[0].id, aws_subnet.public[1].id, aws_subnet.public[2].id]
+  security_groups = [aws_security_group.load_balancer_security_group.id]
+}
+
+resource "aws_lb_listener" "web" {
+  load_balancer_arn = aws_lb.web.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.web.arn
+  }
+}
+
+resource "aws_lb_target_group" "web" {
+  name        = "my-web-app-target-group"
+  port        = 5000
+  protocol    = "HTTP"
+  target_type = "instance"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    path                = "/healthz"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 10
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    matcher             = "200"
+  }
 }
