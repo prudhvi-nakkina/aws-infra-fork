@@ -140,42 +140,35 @@ resource "aws_iam_instance_profile" "profile" {
   role = aws_iam_role.EC2-CSYE6225.name
 }
 
-# Define the launch configuration
-resource "aws_launch_configuration" "csye_ec2_config" {
-  image_id                    = data.aws_ami.latest_ami.id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.app_keypair.key_name
-  security_groups             = [aws_security_group.application.id]
-  name_prefix                 = "aws_launch_config"
-  associate_public_ip_address = true
-  iam_instance_profile        = aws_iam_instance_profile.profile.name
-
-  # Add SSH key to the instance
-  connection {
-    type        = var.connection_type
-    user        = var.user
-    private_key = file(var.privatekey_path)
-    timeout     = var.ssh_timeout
-    host        = self.public_ip
+resource "aws_launch_template" "csye_ec2_template" {
+  image_id      = data.aws_ami.latest_ami.id
+  instance_type = var.instance_type
+  key_name      = aws_key_pair.app_keypair.key_name
+  name          = "csye_ec2_template"
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.application.id]
   }
-
-  root_block_device {
-    volume_size           = 50
-    delete_on_termination = true
+  iam_instance_profile {
+    name = aws_iam_instance_profile.profile.name
   }
+  block_device_mappings {
+    device_name = "/dev/sdf"
 
-  ebs_block_device {
-    device_name           = "/dev/sdf"
-    volume_size           = var.ebs_volume_size
-    volume_type           = var.ebs_volume_type
-    delete_on_termination = true
-
+    ebs {
+      volume_size           = var.ebs_volume_size
+      volume_type           = var.ebs_volume_type
+      delete_on_termination = true
+      encrypted             = true
+      kms_key_id            = aws_kms_key.ebs_encryption_key.arn
+    }
   }
-
-  user_data = <<REALEND
+  user_data = base64encode(<<REALEND
 #!/bin/bash
 # Update package manager
     sudo apt-get update
+    aws acm import-certificate --certificate /home/ec2-user/certificate.pem --private-key /home/ec2-user/private-key.pem --certificate-chain /home/ec2-user/certificate-chain.pem
+
 
 echo "[Unit]
 Description=Webapp Service
@@ -208,20 +201,94 @@ sudo systemctl enable webapp.service
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/tmp/config.json
 
 REALEND
+  )
 }
+
+# # Define the launch configuration
+# resource "aws_launch_configuration" "csye_ec2_config" {
+#   image_id                    = data.aws_ami.latest_ami.id
+#   instance_type               = var.instance_type
+#   key_name                    = aws_key_pair.app_keypair.key_name
+#   security_groups             = [aws_security_group.application.id]
+#   name_prefix                 = "aws_launch_config"
+#   associate_public_ip_address = true
+#   iam_instance_profile        = aws_iam_instance_profile.profile.name
+
+#   # Add SSH key to the instance
+#   connection {
+#     type        = var.connection_type
+#     user        = var.user
+#     private_key = file(var.privatekey_path)
+#     timeout     = var.ssh_timeout
+#     host        = self.public_ip
+#   }
+
+#   root_block_device {
+#     volume_size           = 50
+#     delete_on_termination = true
+#   }
+
+#   ebs_block_device {
+#     device_name           = "/dev/sdf"
+#     volume_size           = var.ebs_volume_size
+#     volume_type           = var.ebs_volume_type
+#     delete_on_termination = true
+#     encrypted             = true
+#   }
+
+#   user_data = <<REALEND
+# #!/bin/bash
+# # Update package manager
+#     sudo apt-get update
+
+# echo "[Unit]
+# Description=Webapp Service
+# After=network.target
+
+# [Service]
+# Environment="DB_HOST=${aws_db_instance.default.address}"
+# Environment="DB_PORT=${var.DB_PORT}"
+# Environment="DB_DIALECT=${var.DB_DIALECT}"
+# Environment="NODE_ENV=${var.NODE_ENV}"
+# Environment="PORT=${var.PORT}"
+# Environment="DB_USERNAME=${aws_db_instance.default.username}"
+# Environment="DB_PASSWORD=${aws_db_instance.default.password}"
+# Environment="DB=${aws_db_instance.default.db_name}"
+# Environment="S3=${aws_s3_bucket.private_bucket.bucket}"
+# Environment="AWS_REGION=${var.aws_region}"
+
+# Type=simple
+# User=ec2-user
+# WorkingDirectory=/home/ec2-user/webapp
+# ExecStart=/usr/bin/node listener.js
+# Restart=on-failure
+
+# [Install]
+# WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
+# sudo systemctl daemon-reload
+# sudo systemctl start webapp.service
+# sudo systemctl enable webapp.service
+
+# sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/tmp/config.json
+
+# REALEND
+# }
 
 # Define the auto scaling group
 resource "aws_autoscaling_group" "csye_ec2-asg" {
-  name                 = "csye_ec2-asg"
-  default_cooldown     = 60
-  desired_capacity     = 1
-  launch_configuration = aws_launch_configuration.csye_ec2_config.name
-  vpc_zone_identifier  = ["${aws_subnet.public[0].id}", "${aws_subnet.public[1].id}", "${aws_subnet.public[2].id}"]
-  max_size             = 3
-  min_size             = 1
-  health_check_type    = "EC2"
-  force_delete         = true
-  target_group_arns    = [aws_lb_target_group.web.arn]
+  name             = "csye_ec2-asg"
+  default_cooldown = 60
+  desired_capacity = 1
+  launch_template {
+    id      = aws_launch_template.csye_ec2_template.id
+    version = "$Latest"
+  }
+  vpc_zone_identifier = ["${aws_subnet.public[0].id}", "${aws_subnet.public[1].id}", "${aws_subnet.public[2].id}"]
+  max_size            = 3
+  min_size            = 1
+  health_check_type   = "EC2"
+  force_delete        = true
+  target_group_arns   = [aws_lb_target_group.web.arn]
   tag {
     key                 = "Name"
     value               = "csye_ec2-asg"
@@ -590,6 +657,8 @@ resource "aws_db_instance" "default" {
   skip_final_snapshot     = true
   apply_immediately       = true
   backup_retention_period = 0
+  storage_encrypted       = true
+  kms_key_id              = aws_kms_key.rds_encryption_key.arn
   vpc_security_group_ids = [
     aws_security_group.database_security_group.id
   ]
@@ -672,12 +741,12 @@ resource "aws_security_group" "load_balancer_security_group" {
   name        = "load_balancer"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    from_port   = var.ports[1]
-    to_port     = var.ports[1]
-    protocol    = var.protocol
-    cidr_blocks = [var.cidr_gateway]
-  }
+  # ingress {
+  #   from_port   = var.ports[1]
+  #   to_port     = var.ports[1]
+  #   protocol    = var.protocol
+  #   cidr_blocks = [var.cidr_gateway]
+  # }
 
   ingress {
     from_port   = var.ports[2]
@@ -708,10 +777,33 @@ resource "aws_lb" "web" {
   security_groups = [aws_security_group.load_balancer_security_group.id]
 }
 
-resource "aws_lb_listener" "web" {
+resource "aws_lb_listener" "web-dev" {
+  count             = var.aws_profile == "dev" ? 1 : 0
   load_balancer_arn = aws_lb.web.arn
-  port              = "80"
-  protocol          = "HTTP"
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = data.aws_acm_certificate.dev[0].arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.web.arn
+  }
+}
+
+data "aws_acm_certificate" "my_cert" {
+  count    = var.aws_profile == "demo" ? 1 : 0
+  domain   = "prod.prudhvinakkina.me"
+  statuses = ["ISSUED"]
+}
+
+resource "aws_lb_listener" "web-demo" {
+  count             = var.aws_profile == "demo" ? 1 : 0
+  load_balancer_arn = aws_lb.web.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = data.aws_acm_certificate.my_cert[0].arn
 
   default_action {
     type             = "forward"
@@ -736,3 +828,157 @@ resource "aws_lb_target_group" "web" {
     matcher             = "200"
   }
 }
+
+resource "aws_kms_key" "ebs_encryption_key" {
+  description             = "Customer managed key for EBS encryption"
+  deletion_window_in_days = 7
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:*"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow access for Key Administrators"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion"
+        ],
+        Resource = "*"
+      },
+      {
+        Sid    = "Enable EBS Encryption"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_kms_key" "rds_encryption_key" {
+  description             = "Customer managed key for RDS encryption"
+  deletion_window_in_days = 7
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:*"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow access for Key Administrators"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion"
+        ],
+        Resource = "*"
+      },
+      {
+        Sid    = "Enable RDS Encryption"
+        Effect = "Allow"
+        Principal = {
+          AWS = "*"
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+data "aws_acm_certificate" "dev" {
+  count    = var.aws_profile == "dev" ? 1 : 0
+  domain   = "dev.prudhvinakkina.me"
+  statuses = ["ISSUED"]
+}
+
+# resource "aws_acm_certificate_validation" "dev" {
+#   count             = try(var.aws_profile == "dev" ? 1 : 0, 0)
+#   certificate_arn   = aws_acm_certificate.dev[0].arn
+
+#   lifecycle {
+#     create_before_destroy = true
+#   }
+# }
+
+# resource "aws_lb_listener_certificate" "example" {
+#   count           = try(var.aws_profile == "dev" ? 1 : 0, 0)
+#   listener_arn    = aws_lb_listener.web.arn
+#   certificate_arn = aws_acm_certificate.dev[0].arn
+# }
+
+# resource "aws_route53_record" "ssl_cname" {
+#   count   = try(var.aws_profile == "dev" ? 1 : 0, 0)
+#   zone_id = data.aws_route53_zone.example_zone.id
+#   name    = "dev"
+#   type    = "CNAME"
+#   ttl     = "300"
+
+#   records = [
+#     "${aws_lb.web.dns_name}",
+#   ]
+# }
+
