@@ -1,4 +1,4 @@
-# Assignment - 8
+# Assignment - 9
 
 ## Goal
 
@@ -35,10 +35,15 @@
 - As a user, I want metrics on API usage available in CloudWatch.
 - As a developer, I can log metrics using statsd
 
-## Assignment-7 features
+## Assignment-8 features
 
 - As a developer, I can implement auto scaling of ec2 instances based on CPU Utilization
 - As a developer, I can implement load balancing using application load balancer
+
+## Assignment-8 features
+
+- As a developer, I can implement continuous delivery by refreshing launch template
+- As a developer, I can implement ssl encryption
 
 ## Requirements
 
@@ -52,3 +57,7 @@
 - run terraform plan
 - run terraform apply
 - check AWS Console to verify
+
+## import certificate
+
+aws acm import-certificate --certificate fileb:///mnt/c/prod_prudhvinakkina_me/Certificate.crt --private-key fileb:///mnt/c/prod_prudhvinakkina_me/PrivateKey.pem --certificate-chain fileb:///mnt/c/prod_prudhvinakkina_me/CertificateChain.pem

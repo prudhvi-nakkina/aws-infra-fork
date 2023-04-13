@@ -145,6 +145,7 @@ resource "aws_launch_template" "csye_ec2_template" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.app_keypair.key_name
   name          = "csye_ec2_template"
+  disable_api_termination = false
   network_interfaces {
     associate_public_ip_address = true
     security_groups             = [aws_security_group.application.id]
@@ -277,7 +278,6 @@ REALEND
 # Define the auto scaling group
 resource "aws_autoscaling_group" "csye_ec2-asg" {
   name             = "csye_ec2-asg"
-  default_cooldown = 60
   desired_capacity = 1
   launch_template {
     id      = aws_launch_template.csye_ec2_template.id
@@ -289,6 +289,9 @@ resource "aws_autoscaling_group" "csye_ec2-asg" {
   health_check_type   = "EC2"
   force_delete        = true
   target_group_arns   = [aws_lb_target_group.web.arn]
+  lifecycle {
+    create_before_destroy = true
+  }
   tag {
     key                 = "Name"
     value               = "csye_ec2-asg"
@@ -301,7 +304,7 @@ resource "aws_autoscaling_policy" "scale_up_policy" {
   adjustment_type        = "ChangeInCapacity"
   cooldown               = 60
   autoscaling_group_name = aws_autoscaling_group.csye_ec2-asg.name
-
+  metric_aggregation_type = "Average"
   policy_type        = "SimpleScaling"
   scaling_adjustment = 1
 }
@@ -309,11 +312,12 @@ resource "aws_autoscaling_policy" "scale_up_policy" {
 resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
   alarm_name          = "scale_up_alarm"
   alarm_description   = "scale_up_alarm"
-  evaluation_periods  = "2"
+  evaluation_periods  = "1"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "30"
+  period              = "60"
+  treat_missing_data  = "notBreaching"
   statistic           = "Average"
   threshold           = "5"
   dimensions = {
@@ -329,7 +333,7 @@ resource "aws_autoscaling_policy" "scale_down_policy" {
   adjustment_type        = "ChangeInCapacity"
   cooldown               = 60
   autoscaling_group_name = aws_autoscaling_group.csye_ec2-asg.name
-
+  metric_aggregation_type = "Average"
   policy_type        = "SimpleScaling"
   scaling_adjustment = -1
 }
@@ -337,11 +341,11 @@ resource "aws_autoscaling_policy" "scale_down_policy" {
 resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
   alarm_name          = "scale_down_alarm"
   alarm_description   = "scale_down_alarm"
-  evaluation_periods  = "2"
+  evaluation_periods  = "1"
   comparison_operator = "LessThanOrEqualToThreshold"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = "120"
+  period              = "60"
   statistic           = "Average"
   threshold           = "3"
   dimensions = {

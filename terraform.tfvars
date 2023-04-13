@@ -1,5 +1,5 @@
 aws_region          = "us-east-1"
-aws_profile         = "dev"
+aws_profile         = "demo"
 cidr_block          = "10.0.0.0/16"
 availability_zones  = ["a", "b", "c"]
 sub_prefix          = "10.0."
